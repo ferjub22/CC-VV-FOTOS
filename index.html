@@ -1510,14 +1510,35 @@
                 if (!response.ok) throw new Error("Local backend not available");
                 loadedPhotos = await response.json();
             } catch (error) {
-                console.log("No se pudo contactar con el backend local, usando listado estático:", error);
+                console.log("No se pudo contactar con el backend local. Intentando obtener listado en tiempo real desde GitHub...");
                 
-                // Load from localStorage if present
-                const savedSelection = JSON.parse(localStorage.getItem('selected_photos') || '[]');
-                loadedPhotos = STATIC_PHOTOS_FALLBACK.map(photo => ({
-                    ...photo,
-                    selected: savedSelection.includes(photo.name)
-                }));
+                try {
+                    // Fetch live list of files in FOTOS folder from GitHub API
+                    const headers = {};
+                    if (githubToken) {
+                        headers['Authorization'] = `token ${githubToken}`;
+                    }
+                    const ghResponse = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/FOTOS`, { headers });
+                    if (!ghResponse.ok) throw new Error(`GitHub API status: ${ghResponse.status}`);
+                    const files = await ghResponse.json();
+                    
+                    const savedSelection = JSON.parse(localStorage.getItem('selected_photos') || '[]');
+                    loadedPhotos = files
+                        .filter(f => f.type === 'file' && f.name.toLowerCase().match(/\.(jpg|jpeg|png)$/))
+                        .map(f => ({
+                            name: f.name,
+                            size: f.size || 0,
+                            selected: savedSelection.includes(f.name)
+                        }));
+                    console.log("Listado de fotos cargado exitosamente en tiempo real desde GitHub API.");
+                } catch (apiErr) {
+                    console.log("No se pudo obtener listado desde GitHub (usando listado estático local como respaldo):", apiErr);
+                    const savedSelection = JSON.parse(localStorage.getItem('selected_photos') || '[]');
+                    loadedPhotos = STATIC_PHOTOS_FALLBACK.map(photo => ({
+                        ...photo,
+                        selected: savedSelection.includes(photo.name)
+                    }));
+                }
             }
             
             // Filter out deleted photos
